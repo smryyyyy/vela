@@ -90,7 +90,7 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
 
       // ★ 关键修复：接受 AI 返回的从 cursor 到 endChapter 范围内的所有有效章节
       // AI 可能一次性返回超出本批次（batchEnd）的章节，全部保留，避免浪费和重复 LLM 请求
-      const parsed = parseTextBlueprints(resultText, cursor, endChapter)
+      const parsed = parseTextBlueprints(resultText, cursor, endChapter, callbacks.log)
       newBlueprints.push(...parsed)
 
       // ==== 批次入库 ====

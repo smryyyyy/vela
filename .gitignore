@@ -1,37 +1,36 @@
-# 依赖
-node_modules
+# Dependencies
+node_modules/
 
-# 构建输出
-dist
-dist-electron
-release
+# Build output
+dist/
+dist-electron/
+release/
 
-# 日志
-logs
-*.log
-npm-debug.log*
-pnpm-debug.log*
-
-# 编辑器
-.vscode/*
-!.vscode/extensions.json
-.idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# 系统文件
-.DS_Store
-Thumbs.db
-
-# 环境变量
+# Env files
 .env
 .env.local
 .env.*.local
 
-# 临时文件
-*.local
-dist-ssr
-tailwind.config.js.bak
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Electron builder
+*.dmg
+*.exe
+*.AppImage
+*.snap
+
+# Storybook
+storybook-static/

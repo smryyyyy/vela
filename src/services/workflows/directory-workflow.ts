@@ -23,6 +23,61 @@ const EMPTY_BLUEPRINT: ChapterBlueprint = {
   notesUpdatedAt: '',
 }
 
+/**
+ * 修复 LLM 生成的 JSON 常见语法错误（冒号缺失、尾随逗号等）
+ */
+function repairJSON(text: string): string {
+  let fixed = text
+  // 1. 修复 "blueprints": { ... 应该是数组 "blueprints": [{ ... }]
+  fixed = fixed.replace(/"blueprints":\s*\{/g, '"blueprints": [{')
+  // 2. 修复最外层 } 后面可能是 }} 需要变成 }]
+  fixed = fixed.replace(/\}\s*$/g, '}]')
+  // 3. 修复属性名后缺冒号: "key" "value" → "key": "value"
+  fixed = fixed.replace(/"(\w+)"\s+(?=(?:"|\[|\{|\d+|true|false|null))/g, '"$1": ')
+  // 4. 修复数组/对象最后一个元素后的尾随逗号
+  fixed = fixed.replace(/,\s*([}\]])/g, '$1')
+  return fixed
+}
+
+/** 安全 JSON 解析（带自动修复） */
+function safeParseJSON(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    const repaired = repairJSON(text)
+    return JSON.parse(repaired)
+  }
+}
+
+/**
+ * 从 LLM 回复中逐个提取章节对象（JSON 整体格式混乱时的兜底方案）
+ * 匹配 { "chapterNumber": N, ... } 的独立对象并分别解析
+ */
+function extractChaptersFallback(text: string): ChapterBlueprint[] {
+  const chapters: ChapterBlueprint[] = []
+  const chapterRegex = /\{\s*"chapter(?:Number|_number)"\s*:\s*(\d+)\s*[^}]*\}/g
+  let match
+  while ((match = chapterRegex.exec(text)) !== null) {
+    try {
+      const obj = JSON.parse(match[0])
+      chapters.push({
+        ...EMPTY_BLUEPRINT,
+        chapterNumber: Number(obj.chapterNumber || obj.chapter_number || 0),
+        title: String(obj.title || `第${obj.chapterNumber}章`),
+        role: String(obj.role || '发展'),
+        purpose: String(obj.purpose || ''),
+        keyEvents: String(obj.keyEvents || obj.key_events || ''),
+        characters: Array.isArray(obj.characters) ? obj.characters : [],
+        suspenseHook: String(obj.suspenseHook || obj.suspense_hook || ''),
+        userGuidance: '',
+      })
+    } catch {
+      // 单个对象解析失败则跳过
+    }
+  }
+  return chapters
+}
+
 export interface DirectoryWorkflowParams {
   mode: 'full' | 'append'
   startChapter?: number
@@ -35,7 +90,7 @@ export interface DirectoryWorkflowParams {
 // 2. 蓝图文件访问与工具函数
 // ==========================================
 
-export function parseTextBlueprints(content: string, startNum: number, endNum: number): ChapterBlueprint[] {
+export function parseTextBlueprints(content: string, startNum: number, endNum: number, log?: (msg: string) => void): ChapterBlueprint[] {
   let result: ChapterBlueprint[] = []
 
   try {
@@ -46,9 +101,13 @@ export function parseTextBlueprints(content: string, startNum: number, endNum: n
 
     if (startIndex !== -1 && endIndex !== -1) {
       const arrayStr = jsonStr.substring(startIndex, endIndex + 1)
-      let parsed = JSON.parse(arrayStr)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.blueprints) {
-        parsed = parsed.blueprints
+      let parsed = safeParseJSON(arrayStr)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'blueprints' in parsed) {
+        parsed = (parsed as Record<string, unknown>).blueprints
+      }
+      // 兼容 blueprints 值是单个对象而非数组的情况
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'chapterNumber' in parsed) {
+        parsed = [parsed]
       }
       if (Array.isArray(parsed)) {
         result = parsed
@@ -69,8 +128,17 @@ export function parseTextBlueprints(content: string, startNum: number, endNum: n
           }))
       }
     }
-  } catch {
-    console.error('Failed to parse blueprint JSON', content)
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e)
+    // 兜底：从混乱的文本中逐个提取章节对象
+    const fallback = extractChaptersFallback(content).filter(p => p.chapterNumber >= startNum && p.chapterNumber <= endNum)
+    if (fallback.length > 0) {
+      log?.('✅ 兜底解析成功，提取到 ' + fallback.length + ' 章')
+      result = fallback
+    } else {
+      log?.('⚠️ 蓝图 JSON 解析失败: ' + errMsg + '，原始响应(前1500字)：' + content.slice(0, 1500))
+      console.error('Failed to parse blueprint JSON', content)
+    }
   }
 
   const distinctMap = new Map<number, ChapterBlueprint>()
