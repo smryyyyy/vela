@@ -12,6 +12,11 @@ export class OpenAIProvider implements ILLMProvider {
     return `${base}/v1/chat/completions`
   }
 
+  /** 判断是否为本地 LLM 后端（LM Studio / ollama 等） */
+  private isLocalEndpoint(baseUrl: string): boolean {
+    return /localhost|127\.0\.0\.1|192\.168\.|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\./.test(baseUrl)
+  }
+
   async generate(model: ModelProfile, messages: Array<{ role: string; content: string }>, opts: LLMGenerateOptions): Promise<LLMResponse> {
     const url = this.buildUrl(model.baseUrl)
 
@@ -30,7 +35,20 @@ export class OpenAIProvider implements ILLMProvider {
       body.temperature = opts.temperature ?? model.temperature
     }
 
-    if (opts.responseFormat) body.response_format = opts.responseFormat
+    if (opts.responseFormat) {
+      // LM Studio / llama.cpp 不支持 json_object，只支持 json_schema 或 text
+      if (opts.responseFormat.type === 'json_object' && this.isLocalEndpoint(model.baseUrl)) {
+        body.response_format = { type: 'text' }
+        // 在最后一条消息追加 JSON 输出提示，替代 json_object 的引导效果
+        const lastMsg = messages[messages.length - 1]
+        if (lastMsg && lastMsg.role === 'user') {
+          const original = lastMsg.content
+          lastMsg.content = `${original}\n\n请直接输出合法 JSON，不要包含注释或多余说明。`
+        }
+      } else {
+        body.response_format = opts.responseFormat
+      }
+    }
 
     const res = await fetch(url, {
       method: 'POST',
@@ -83,7 +101,19 @@ export class OpenAIProvider implements ILLMProvider {
         body.temperature = opts.temperature ?? model.temperature
       }
 
-      if (opts.responseFormat) body.response_format = opts.responseFormat
+      if (opts.responseFormat) {
+        // LM Studio / llama.cpp 不支持 json_object，只支持 json_schema 或 text
+        if (opts.responseFormat.type === 'json_object' && this.isLocalEndpoint(model.baseUrl)) {
+          body.response_format = { type: 'text' }
+          // 在最后一条消息追加 JSON 输出提示
+          const lastMsg = messages[messages.length - 1]
+          if (lastMsg && lastMsg.role === 'user') {
+            lastMsg.content = `${lastMsg.content}\n\n请直接输出合法 JSON，不要包含注释或多余说明。`
+          }
+        } else {
+          body.response_format = opts.responseFormat
+        }
+      }
 
       const res = await fetch(url, {
         method: 'POST',
