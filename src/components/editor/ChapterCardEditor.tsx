@@ -27,13 +27,13 @@ import { toast } from '../ui/Toast'
 import { confirm } from '../ui/Confirm'
 import { globalEventBus } from '../../shared/event-bus'
 
-const ROLES = ['建置', '铺垫', '发展', '冲突', '高潮', '转折', '收尾']
+const ROLES = ['开篇', '铺垫', '发展', '冲突', '高潮', '转折', '收尾']
 
 const ROLE_COLORS: Record<string, string> = {
   高潮: 'bg-red-500/20 text-red-400',
   冲突: 'bg-orange-500/20 text-orange-400',
   转折: 'bg-purple-500/20 text-purple-400',
-  建置: 'bg-blue-500/20 text-blue-400',
+  开篇: 'bg-blue-500/20 text-blue-400',
   收尾: 'bg-green-500/20 text-green-400',
 }
 

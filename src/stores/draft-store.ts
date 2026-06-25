@@ -6,10 +6,7 @@
  */
 import { create } from 'zustand'
 import { ipc } from '../services/ipc-client'
-import {
-  updateDraftStatus as updateDraftStatusInIndex,
-  type DraftMeta,
-} from '../services/draft-index'
+import type { DraftMeta } from '../services/draft-index'
 import type { DraftStatus } from '../shared/draft-status'
 import { getDraftDir } from '../services/workflows/chapter-workflow'
 import { useProjectStore } from './project-store'
@@ -115,15 +112,25 @@ export const useDraftStore = create<DraftState>()((set, get) => ({
 
 
   markDraftStatus: async (draftPath, chapterNumber, status) => {
-    // 从路径提取版本号
+    const project = useProjectStore.getState().currentProject
+    if (!project) return
+
+    // 新格式: vela://draft/{id} — 直接用 DB 更新
+    const velaDraftMatch = draftPath.match(/^vela:\/\/draft\/(\d+)$/)
+    if (velaDraftMatch) {
+      const id = parseInt(velaDraftMatch[1])
+      await ipc.invoke('db:draft-update-status', id, status)
+      await get().loadChapterDrafts(chapterNumber)
+      return
+    }
+
+    // 旧格式: draft_v{N}.md — 通过文件索引更新
     const versionMatch = draftPath.match(/draft_v(\d+)\.md$/)
     if (!versionMatch) return
     const version = parseInt(versionMatch[1])
-    const project = useProjectStore.getState().currentProject
-    if (!project) return
     const chapterDir = getDraftDir(project.path, chapterNumber)
-    await updateDraftStatusInIndex(chapterDir, version, status)
-    // 重新加载该章草稿以刷新缓存
+    const { updateDraftStatus } = await import('../services/draft-index')
+    await updateDraftStatus(chapterDir, version, status)
     await get().loadChapterDrafts(chapterNumber)
   },
 
