@@ -196,26 +196,41 @@ export function createCharacterExtractSteps(_projectPath: string, characterDynam
         const llmStore = useLLMStore.getState()
         cb.appendText('🔍 正在调用 AI 提取角色卡片...\n')
 
-        let fullContent = ''
-        await new Promise<void>((resolve, reject) => {
-          llmStore.generateStream(
-            [
-              { role: 'system', content: systemRole },
-              { role: 'user', content: extractPrompt }
-            ],
-            {
-              onChunk: (chunk) => { fullContent += chunk; cb.appendText(chunk) },
-              onDone: () => resolve(),
-              onError: (err) => reject(new Error(err))
-            },
-            undefined,
-            { responseFormat: { type: 'json_object' } }
-          )
-        })
+        // 非流式模式：json_object 在流式下可能不稳定
+        const resp = await llmStore.generate(
+          [
+            { role: 'system', content: systemRole },
+            { role: 'user', content: extractPrompt }
+          ],
+          undefined,
+          { responseFormat: { type: 'json_object' } }
+        )
 
+        if (!resp.success) {
+          throw new Error(resp.error || 'AI 调用失败')
+        }
+
+        const fullContent = resp.content
         const cleanedCards = stripThinkingTags(fullContent)
         const jsonStr = cleanedCards.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-        const parsedData = JSON.parse(jsonStr)
+
+        let parsedData: unknown
+        try {
+          parsedData = JSON.parse(jsonStr)
+        } catch (e) {
+          // 修复重试
+          let r = jsonStr
+            .replace(/\{\s*(\w+)\s*:/g, '{ "$1":')
+            .replace(/,\s*(\w+)\s*:/g, ', "$1":')
+            .replace(/"(\w+)"\s+(?=(?:"|\[|\{|\d+|true|false|null))/g, '"$1": ')
+            .replace(/,\s*([}\]])/g, '$1')
+            .replace(/}\s*\{/g, '}, {')
+          try {
+            parsedData = JSON.parse(r)
+          } catch {
+            throw new Error('AI 返回的角色数据格式不正确，JSON 解析失败: ' + (e instanceof Error ? e.message : String(e)) + '，响应前200字：' + jsonStr.slice(0, 200))
+          }
+        }
 
         // 兼容两种格式：直接数组 或 { characters: [...] }
         const parsedCards: Array<Record<string, unknown>> = Array.isArray(parsedData)

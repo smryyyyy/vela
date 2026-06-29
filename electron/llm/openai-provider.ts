@@ -17,13 +17,19 @@ export class OpenAIProvider implements ILLMProvider {
     return /localhost|127\.0\.0\.1|192\.168\.|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\./.test(baseUrl)
   }
 
+  /** 安全获取 max_tokens，确保在有效范围内 */
+  private safeMaxTokens(val: number | undefined | null, fallback = 32768): number {
+    const n = Number(val)
+    return Number.isFinite(n) && n >= 1 ? n : fallback
+  }
+
   async generate(model: ModelProfile, messages: Array<{ role: string; content: string }>, opts: LLMGenerateOptions): Promise<LLMResponse> {
     const url = this.buildUrl(model.baseUrl)
 
     const body: Record<string, unknown> = {
       model: model.modelName,
       messages,
-      max_tokens: opts.maxTokens ?? model.maxTokens,
+      max_tokens: this.safeMaxTokens(opts.maxTokens ?? model.maxTokens),
       stream: false,
     }
 
@@ -90,7 +96,7 @@ export class OpenAIProvider implements ILLMProvider {
       const body: Record<string, unknown> = {
         model: model.modelName,
         messages,
-        max_tokens: opts.maxTokens ?? model.maxTokens,
+        max_tokens: this.safeMaxTokens(opts.maxTokens ?? model.maxTokens),
         stream: true,
       }
 

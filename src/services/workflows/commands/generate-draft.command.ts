@@ -108,7 +108,12 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
 
     callbacks.log('调用 AI 生成章节草稿...')
 
-    const draftText = await this.callLLMWithBuilder(promptBuilder, callbacks)
+    // 项目专属指导放到 prompt 最开头，优先级最高
+    const finalPrompt = projectPrompts
+      ? `【⚠️ 项目专属核心设定（优先级最高，不可违反）】\n${projectPrompts}\n\n---\n\n${prompt}`
+      : prompt
+    const systemRole = promptBuilder.getSystemRole()
+    const draftText = await this.callLLM(finalPrompt, systemRole, callbacks)
     const cleanDraftText = this.stripThinkingTags(draftText)
 
     // 落于数据库
